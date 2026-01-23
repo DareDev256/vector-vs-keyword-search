@@ -14,6 +14,7 @@ from src.data.qrels import load_beir_qrels_tsv
 from src.eval.metrics import compute_metrics_for_run
 from src.retrieval.bm25_es import ElasticsearchBM25Retriever, ElasticsearchConfig, wait_for_elasticsearch, create_client
 from src.retrieval.dense_faiss import DenseFaissRetriever, DenseConfig
+from src.retrieval.hybrid import HybridRetriever, HybridConfig
 from src.utils.io import write_json
 from src.utils.logging import get_logger
 from src.utils.seed import set_seed
@@ -85,7 +86,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate BM25 (ES) vs Dense (FAISS) retrieval on BEIR.")
     parser.add_argument("--dataset", type=str, default="scifact")
     parser.add_argument("--split", type=str, default="test")
-    parser.add_argument("--method", type=str, default="all", choices=["bm25", "dense", "all"])
+    parser.add_argument("--method", type=str, default="all", choices=["bm25", "dense", "hybrid", "all"])
     parser.add_argument("--k", type=int, default=10, help="Max retrieval depth (must be >= 10).")
     parser.add_argument("--limit_queries", type=int, default=200)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
@@ -155,6 +156,37 @@ def main() -> None:
 
         metrics = compute_metrics_for_run(qrels_selected, run, ks=cfg.ks)
         method_rows.append({"method": "dense_faiss", **metrics, "avg_latency_ms": _avg_ms(times)})
+
+    if args.method in ("hybrid", "all"):
+        # Hybrid requires both BM25 and Dense - initialize if not already done
+        es_config = ElasticsearchConfig(host=args.es_host, index_name=args.es_index)
+        es_client = create_client(es_config)
+        wait_for_elasticsearch(es_client, timeout_s=60)
+        bm25 = ElasticsearchBM25Retriever(es_config)
+
+        default_dense_dir = DATA_DIR / "indexes" / "dense" / cfg.dataset
+        dense_index_path = args.dense_index_path or (default_dense_dir / "faiss.index")
+        dense_mapping_path = args.dense_mapping_path or (default_dense_dir / "doc_ids.json")
+        dense_config = DenseConfig(
+            model_name=args.dense_model,
+            index_path=dense_index_path,
+            mapping_path=dense_mapping_path,
+        )
+        dense = DenseFaissRetriever(dense_config)
+
+        # Create hybrid retriever
+        hybrid = HybridRetriever(bm25, dense, HybridConfig())
+
+        run = {}
+        times = []
+        for qid, text in queries.items():
+            start = time.perf_counter()
+            results = hybrid.retrieve(text, k=max_k)
+            times.append(time.perf_counter() - start)
+            run[qid] = [r.doc_id for r in results]
+
+        metrics = compute_metrics_for_run(qrels_selected, run, ks=cfg.ks)
+        method_rows.append({"method": "hybrid_rrf", **metrics, "avg_latency_ms": _avg_ms(times)})
 
     if not method_rows:
         raise SystemExit("No methods selected.")

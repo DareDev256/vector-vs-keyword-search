@@ -8,11 +8,17 @@ This repo is structured like a small production service/tooling project (clean m
 
 - **BM25**: Elasticsearch text indexing + `multi_match` queries over `title` and `text`.
 - **Dense**: `sentence-transformers/all-MiniLM-L6-v2` embeddings + FAISS `IndexFlatIP` over L2-normalized vectors (cosine similarity).
+- **Hybrid (RRF)**: Combines BM25 and Dense using Reciprocal Rank Fusion for best-of-both-worlds retrieval.
 
 ## Metrics
 
-- Recall@k and MRR@k for `k ∈ {1, 3, 5, 10}`
-- Simple latency: average retrieval time per query (Python-side wall time)
+- **Recall@k**: Fraction of relevant documents retrieved in top-k
+- **Precision@k**: Fraction of retrieved documents that are relevant
+- **MRR@k**: Mean Reciprocal Rank - average of 1/rank for first relevant result
+- **NDCG@k**: Normalized Discounted Cumulative Gain - position-aware relevance metric
+- **Latency**: Average retrieval time per query (Python-side wall time)
+
+All metrics computed for `k ∈ {1, 3, 5, 10}`.
 
 ## Dataset
 
@@ -72,7 +78,8 @@ You can also run the all-in-one helper:
 
 - Dense retrieval requires downloading a model checkpoint the first time you run it (network + disk).
 - Elasticsearch configuration is minimal (single node, no auth); production deployments need security and tuning.
-- This is retrieval-only; adding a hybrid retriever and/or a cross-encoder reranker is a natural next step.
+- Hybrid retrieval adds latency (runs both BM25 + Dense) but often improves accuracy.
+- Adding a cross-encoder reranker on top of hybrid retrieval is a natural next step for even better results.
 
 ## Results Analysis
 
