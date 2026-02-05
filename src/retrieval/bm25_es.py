@@ -7,6 +7,7 @@ from typing import Iterable
 
 from elasticsearch import Elasticsearch
 from elasticsearch import helpers
+from elasticsearch.exceptions import ConnectionError, TransportError
 
 from src.data.download import download_beir_dataset
 from src.data.preprocess import Document, load_beir_corpus
@@ -36,7 +37,7 @@ def wait_for_elasticsearch(client: Elasticsearch, *, timeout_s: int = 60) -> Non
         try:
             if client.ping():
                 return
-        except Exception:
+        except (ConnectionError, TransportError):
             pass
         time.sleep(1)
     raise TimeoutError("Elasticsearch did not become ready within timeout.")

@@ -86,6 +86,16 @@ class DenseFaissRetriever(Retriever):
             )
         self.index, self.doc_ids = load_index(index_path=config.index_path, mapping_path=config.mapping_path)
 
+        # Validate that the FAISS index dimension matches the model embedding dimension
+        model_dim = self.model.get_sentence_embedding_dimension()
+        index_dim = self.index.d
+        if model_dim != index_dim:
+            raise ValueError(
+                f"FAISS index dimension ({index_dim}) does not match model "
+                f"embedding dimension ({model_dim}). Rebuild the index with "
+                f"the correct model or use a matching index file."
+            )
+
     def retrieve(self, query: str, k: int) -> list[RetrievalResult]:
         if k <= 0:
             raise ValueError("k must be positive")
